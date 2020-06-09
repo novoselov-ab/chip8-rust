@@ -1,7 +1,6 @@
 mod imgui_wgpu;
 
 use futures::executor::block_on;
-use image::ImageFormat;
 use imgui::*;
 use imgui_wgpu::Renderer;
 use imgui_winit_support;
@@ -12,14 +11,13 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-use wgpu::{TextureDescriptor, Extent3d, TextureFormat, TextureDimension, TextureUsage};
 
 pub struct AppDesc {
-    screen_width: usize,
-    screen_height: usize
+    pub screen_width: u32,
+    pub screen_height: u32
 }
 
-pub fn run(desc: AppDesc, draw_imgui: impl Fn(&imgui::Ui) + 'static) {
+pub fn run(desc: &AppDesc, draw_imgui: impl Fn(&imgui::Ui,  &mut Vec<u8>) + 'static) {
     // Set up window and GPU
     let event_loop = EventLoop::new();
     let mut hidpi_factor = 1.0;
@@ -105,10 +103,12 @@ pub fn run(desc: AppDesc, draw_imgui: impl Fn(&imgui::Ui) + 'static) {
 
     let mut last_frame = Instant::now();
 
-    let (width, height) = (32, 32);
-    let mut screen_raw_data: Vec<u8> = vec![0; desc.screen_width * desc.screen_height * 4];
+    let screen_w = desc.screen_width;
+    let screen_h = desc.screen_height;
+    let mut screen_raw_data: Vec<u8> = vec![0; (screen_w as usize) * (screen_h as usize) * 4];
     let screen_texture_id =
-        renderer.create_texture(&device, &mut queue, desc.screen_width as u32, desc.screen_height as u32);
+        renderer.create_texture(&device, screen_w, screen_h);
+    let mut screen_scale = 1.0_f32;
 
 
     let mut last_cursor = None;
@@ -180,30 +180,19 @@ pub fn run(desc: AppDesc, draw_imgui: impl Fn(&imgui::Ui) + 'static) {
                     .expect("Failed to prepare frame");
                 let ui = imgui.frame();
 
-                let width = desc.screen_width;
-                let height = desc.screen_height;
-                for x in 0..width {
-                    for y in 0..height {
-                        let x0 = x * 4;
-                        let y0 = y * 4;
-                        screen_raw_data[y0 * width + x0] = rand::random::<u8>();
-                        screen_raw_data[y0 * width + x0 + 1] = 0;
-                        screen_raw_data[y0 * width + x0 + 2] = 0;
-                        screen_raw_data[y0 * width + x0 + 3] = 0xFF;
-                    }
-                }
-                renderer.update_texture(screen_texture_id, &device, &mut queue, &screen_raw_data, width as u32, height as u32);
+                // Callback to the user
+                draw_imgui(&ui, &mut screen_raw_data);
 
-                draw_imgui(&ui);
+                // Uploaded update screen
+                renderer.update_texture(screen_texture_id, &device, &mut queue, &screen_raw_data, screen_w, screen_h);
 
                 {
-                    let size = [width as f32, height as f32];
-                    let window = imgui::Window::new(im_str!("Hello world"));
+                    let window = imgui::Window::new(im_str!("Screen"));
                     window
                         .size([400.0, 600.0], Condition::FirstUseEver)
                         .build(&ui, || {
-                            ui.text(im_str!("Hello textures!"));
-                            ui.text(im_str!("Say hello to Lenna.jpg"));
+                            ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
+                            let size = [(screen_w as f32) * screen_scale, (screen_h as f32) * screen_scale];
                             Image::new(screen_texture_id, size).build(&ui);
                         });
                 }

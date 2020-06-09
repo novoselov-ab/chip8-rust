@@ -1,43 +1,74 @@
-use clap::{App, Arg};
 use imgui::*;
+use std::rc::Rc;
+use glob::glob;
+use std::path::{PathBuf};
 
 mod app;
 mod chip8;
 
-fn load_rom_from_cli() {
-    let matches = App::new("chip8-rust")
-        .version("0.1")
-        .about("chip8 emulator")
-        .author("Anton Novoselov")
-        .arg(
-            Arg::with_name("ROM_FILE")
-                .help("Input rom file to run")
-                .required(true)
-                .index(1),
-        )
-        .get_matches();
+const SCREEN_SIZE: (u32, u32) = (64, 64);
 
-    let romfile = matches.value_of("ROM_FILE").unwrap();
+fn find_roms() -> glob::Paths {
+    let exe_path = std::env::current_exe();
+    let rom_path = exe_path.unwrap().parent().unwrap().join("../../roms");
 
-    chip8::load_rom(romfile);
+    glob(rom_path.join("**/*.ch8").to_str().unwrap()).unwrap()
 }
 
-fn main() {
-    let app_desc = app::AppDesc {
-        screen_width: 64,
-        screen_height: 64
-    };
 
-    app::run(app_desc, |ui: &imgui::Ui| {
-        let window = imgui::Window::new(im_str!("Hello world 2"));
+struct MyApp
+{
+    _roms: Vec<PathBuf> 
+
+}
+
+impl MyApp
+{
+    fn new() -> Self {
+        let _roms = find_roms().map(|res| res.unwrap()).collect();
+        MyApp {
+            _roms
+        }
+    }
+
+    fn draw_ui(&self, ui: &imgui::Ui, screen_raw: &mut Vec<u8>) {
+        let window = imgui::Window::new(im_str!("ROMs"));
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
-            .build(&ui, || {
-                if ui.button(im_str!("Button"), [200 as f32, 100 as f32]) {
-                    println!("Press");
+            .build(&ui, move || {
+                for rom in &self._roms {
+
+                    if ui.button(&ImString::new(rom.to_str().unwrap()), [0 as f32, 0 as f32]) {
+                        println!("Run");
+                    }
                 }
-                ui.text(im_str!("Hello 1!"));
-                ui.text(im_str!("Hello 2!"));
+
+
+                let width = SCREEN_SIZE.0 as usize;
+                let height = SCREEN_SIZE.1 as usize;
+                for x in 0..width {
+                    for y in 0..height {
+                        let x0 = x * 4;
+                        let y0 = y * 4;
+                        screen_raw[y0 * width + x0] = rand::random::<u8>();
+                        screen_raw[y0 * width + x0 + 1] = 0;
+                        screen_raw[y0 * width + x0 + 2] = 0;
+                        screen_raw[y0 * width + x0 + 3] = 0xFF;
+                    }
+                }                
             });
+    }
+}
+
+
+fn main()   {
+    let app_desc = app::AppDesc {
+        screen_width: SCREEN_SIZE.0,
+        screen_height: SCREEN_SIZE.1
+    };
+
+    let app = Rc::new(MyApp::new());
+    app::run(&app_desc, move |ui: &imgui::Ui, screen_raw: &mut Vec<u8>| {
+       app.draw_ui(ui, screen_raw);
     })
 }
