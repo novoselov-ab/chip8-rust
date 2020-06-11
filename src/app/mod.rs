@@ -17,7 +17,7 @@ pub struct AppDesc {
     pub screen_height: u32
 }
 
-pub fn run(desc: &AppDesc, draw_imgui: impl Fn(&imgui::Ui,  &mut Vec<u8>) + 'static) {
+pub fn run(desc: &AppDesc, mut draw_imgui: impl FnMut(&imgui::Ui,  &mut Vec<u8>) + 'static) {
     // Set up window and GPU
     let event_loop = EventLoop::new();
     let mut hidpi_factor = 1.0;

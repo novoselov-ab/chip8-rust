@@ -18,8 +18,8 @@ fn find_roms() -> glob::Paths {
 
 struct MyApp
 {
-    _roms: Vec<PathBuf> 
-
+    _roms: Vec<PathBuf>,
+    _emulator: chip8::Emulator
 }
 
 impl MyApp
@@ -27,11 +27,12 @@ impl MyApp
     fn new() -> Self {
         let _roms = find_roms().map(|res| res.unwrap()).collect();
         MyApp {
-            _roms
+            _roms,
+            _emulator: chip8::Emulator::new()
         }
     }
 
-    fn draw_ui(&self, ui: &imgui::Ui, screen_raw: &mut Vec<u8>) {
+    fn draw_ui(&mut self, ui: &imgui::Ui, screen_raw: &mut Vec<u8>) {
         let window = imgui::Window::new(im_str!("ROMs"));
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
@@ -39,10 +40,13 @@ impl MyApp
                 for rom in &self._roms {
 
                     if ui.button(&ImString::new(rom.to_str().unwrap()), [0 as f32, 0 as f32]) {
-                        println!("Run");
+                        self._emulator.run(rom);
                     }
                 }
 
+                if !self._emulator.is_halting() {
+                    self._emulator.execute_instruction()
+                }
 
                 let width = SCREEN_SIZE.0 as usize;
                 let height = SCREEN_SIZE.1 as usize;
@@ -67,8 +71,8 @@ fn main()   {
         screen_height: SCREEN_SIZE.1
     };
 
-    let app = Rc::new(MyApp::new());
+    let mut app = Rc::new(MyApp::new());
     app::run(&app_desc, move |ui: &imgui::Ui, screen_raw: &mut Vec<u8>| {
-       app.draw_ui(ui, screen_raw);
+       Rc::get_mut(& mut app).unwrap().draw_ui(ui, screen_raw);
     })
 }

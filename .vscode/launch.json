@@ -5,7 +5,7 @@
             "request": "launch",
             "name": "run learn-rust",
             "program": "${workspaceRoot}\\target\\debug\\chip8-rust.exe",
-            "args": ["roms\\demos\\Maze [David Winter, 199x].ch8"],
+            "args": [],
             "cwd": "${workspaceRoot}",
             "sourceFileMap": {}
         }
