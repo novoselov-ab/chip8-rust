@@ -8,8 +8,8 @@ pub struct Screen {
     data: Vec<u8>,
 }
 
-const SCREEN_WIDTH: usize = 64;
-const SCREEN_HEIGHT: usize = 32;
+pub const SCREEN_WIDTH: usize = 64;
+pub const SCREEN_HEIGHT: usize = 32;
 
 // TODO: try const
 pub static FONT_DATA: [u8; 80] = [
@@ -86,6 +86,7 @@ impl Keypad {
 
     pub fn set(&mut self, index: u8, down: bool) {
         self.keys[index as usize] = down;
+        println!("{0} -> {1}", index, down);
     }
 
     pub fn reset(&mut self) {
