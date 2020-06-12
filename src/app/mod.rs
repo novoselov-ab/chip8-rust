@@ -58,9 +58,29 @@ impl Chip8App {
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
             .build(&ui, || {
-                ui.text(format!("PC: {}", self._emulator.pc));
+                ui.text(format!("PC: {:#X}", self._emulator.pc));
+                ui.text(format!("I: {:#X}", self._emulator.ri));
+                for i in 0..self._emulator.rs.len() {
+                    ui.text(format!("V{:X}: {:#X} ", i, self._emulator.rs[i]));
+                    if (i + 1) % 4 != 0 {
+                        ui.same_line(0.0);
+                    }
+                }
             });
 
+        let window = imgui::Window::new(im_str!("Code"));
+        window
+            .size([400.0, 600.0], Condition::FirstUseEver)
+            .build(&ui, || {
+
+                let code = self._emulator.get_code();
+                for i in 0..code.len() {
+                    ui.text(format!("{}: {:#X}", i, code[i]));
+                }
+
+            });
+
+    
         if !self._emulator.is_halting() {
             self._emulator.execute_instruction()
         }
@@ -183,7 +203,8 @@ impl Chip8App {
         let screen_h = chip8::SCREEN_HEIGHT;
         let mut screen_raw_data: Vec<u8> = vec![0; screen_w * screen_h * 4];
         let screen_texture_id = renderer.create_texture(&device, screen_w as u32, screen_h as u32);
-        let mut screen_scale = 1.0_f32;
+        let mut screen_scale = 9.0_f32;
+        let mut screen_color = [1.0_f32, 1.0_f32, 1.0_f32, 1.0_f32];
 
         let mut last_cursor = None;
 
@@ -280,14 +301,12 @@ impl Chip8App {
                         for y in 0..screen_h {
                             let x0 = x * 4;
                             let y0 = y * 4;
-                            screen_raw_data[y0 * screen_w + x0] =
-                                if self_mut._emulator.screen.get_pixel(x, y) {
-                                    0xFF
-                                } else {
-                                    0
-                                };
-                            screen_raw_data[y0 * screen_w + x0 + 1] = 0;
-                            screen_raw_data[y0 * screen_w + x0 + 2] = 0;
+
+                            let v = if self_mut._emulator.screen.get_pixel(x, y) { 0xFF } else { 0 };
+
+                            screen_raw_data[y0 * screen_w + x0] = v;
+                            screen_raw_data[y0 * screen_w + x0 + 1] = v;
+                            screen_raw_data[y0 * screen_w + x0 + 2] = v;
                             screen_raw_data[y0 * screen_w + x0 + 3] = 0xFF;
                         }
                     }
@@ -302,17 +321,19 @@ impl Chip8App {
                         screen_h as u32,
                     );
 
+                    // Screen window
                     {
-                        let window = imgui::Window::new(im_str!("Screen"));
+                        let window = imgui::Window::new(im_str!("Screen")).always_auto_resize(true);
                         window
-                            .size([400.0, 600.0], Condition::FirstUseEver)
                             .build(&ui, || {
-                                ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
                                 let size = [
                                     (screen_w as f32) * screen_scale,
                                     (screen_h as f32) * screen_scale,
                                 ];
-                                Image::new(screen_texture_id, size).build(&ui);
+                                Image::new(screen_texture_id, size).tint_col(screen_color).build(&ui);
+                                ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
+                                ui.same_line(0.0);
+                                imgui::ColorEdit::new(im_str!("Color"), &mut screen_color).build(&ui);
                             });
                     }
 

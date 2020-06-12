@@ -109,6 +109,7 @@ pub struct Emulator {
     pub screen: Screen,
     pub keypad: Keypad,
     memory: Vec<u8>,
+    code_len: usize,
     pub stack: Vec<u16>,
     pub rs: [u8; 16], // Data registers
     pub ri: u16,      // I register
@@ -129,6 +130,13 @@ impl Emulator {
 
     pub fn is_halting(&self) -> bool {
         self._halt
+    }
+
+    pub fn get_code(&self) -> &[u8] {
+        if self.memory.is_empty() {
+            return &[]
+        }
+        &self.memory[0x200..0x200 + self.code_len]
     }
 
     pub fn run(&mut self, romfile: &PathBuf) {
@@ -156,6 +164,7 @@ impl Emulator {
         for i in 0..contents.len() {
             self.memory[i + 0x200] = contents[i];
         }
+        self.code_len = contents.len();
 
         // Copy, use splice?
         for i in 0..FONT_DATA.len() {
