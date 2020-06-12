@@ -45,7 +45,7 @@ impl Shaders {
 /// A container for a bindable texture to be used internally.
 pub struct Texture {
     bind_group: BindGroup,
-    texture: wgpu::Texture
+    texture: wgpu::Texture,
 }
 
 impl Texture {
@@ -83,7 +83,10 @@ impl Texture {
             ],
         });
 
-        Texture { bind_group, texture }
+        Texture {
+            bind_group,
+            texture,
+        }
     }
 }
 
@@ -145,17 +148,6 @@ impl Renderer {
             compile(vs_bytes),
             compile(fs_bytes),
         )
-    }
-
-    #[deprecated(note = "Renderer::new now uses static shaders by default")]
-    pub fn new_static(
-        imgui: &mut Context,
-        device: &Device,
-        queue: &mut Queue,
-        format: TextureFormat,
-        clear_color: Option<Color>,
-    ) -> Renderer {
-        Renderer::new(imgui, device, queue, format, clear_color)
     }
 
     /// Create an entirely new imgui wgpu renderer.
@@ -488,7 +480,7 @@ impl Renderer {
     /// Creates and uploads a new wgpu texture made from the imgui font atlas.
     pub fn update_texture(
         &mut self,
-        id: TextureId ,
+        id: TextureId,
         device: &Device,
         queue: &mut Queue,
         data: &[u8],
@@ -530,16 +522,10 @@ impl Renderer {
         queue.submit(&[encoder.finish()]);
 
         Some(true)
-    }    
-
+    }
 
     /// Creates a new wgpu texture made from the imgui font atlas.
-    pub fn create_texture(
-        &mut self,
-        device: &Device,
-        width: u32,
-        height: u32,
-    ) -> TextureId {
+    pub fn create_texture(&mut self, device: &Device, width: u32, height: u32) -> TextureId {
         // Create the wgpu texture.
         let texture = device.create_texture(&TextureDescriptor {
             label: None,
@@ -558,7 +544,7 @@ impl Renderer {
 
         let texture = Texture::new(texture, &self.texture_layout, device);
         self.textures.insert(texture)
-    }        
+    }
 
     /// Creates and uploads a new wgpu texture made from the imgui font atlas.
     pub fn upload_texture(

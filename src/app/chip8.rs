@@ -186,7 +186,7 @@ impl Emulator {
     pub fn update_timer(&mut self, dt: f32) {
         if self.delay > 0 {
             self.total_dt += dt;
-            const TIMER_PERIOD: f32 = 1.0/60.0;
+            const TIMER_PERIOD: f32 = 1.0 / 60.0;
             while self.total_dt > TIMER_PERIOD {
                 self.total_dt -= TIMER_PERIOD;
                 self.delay -= 1;
@@ -259,7 +259,7 @@ impl Emulator {
             }
             (7, _, _, _) => {
                 // Add the value NN to register VX
-                self.rs[x] =self.rs[x].wrapping_add(nn);
+                self.rs[x] = self.rs[x].wrapping_add(nn);
             }
             (8, _, _, 0) => {
                 // Store the value of register VY in register VX

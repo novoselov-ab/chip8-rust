@@ -3,7 +3,6 @@ mod imgui_wgpu;
 use futures::executor::block_on;
 use glob::glob;
 use imgui::*;
-use imgui::*;
 use imgui_wgpu::Renderer;
 use imgui_winit_support;
 use std::path::PathBuf;
@@ -31,13 +30,12 @@ pub struct Chip8App {
 }
 
 impl Chip8App {
-    pub fn new () -> Self {
-
+    pub fn new() -> Self {
         let roms = find_roms().map(|res| res.unwrap()).collect();
 
         Chip8App {
             _roms: roms,
-            _emulator: chip8::Emulator::new()
+            _emulator: chip8::Emulator::new(),
         }
     }
 
@@ -47,18 +45,21 @@ impl Chip8App {
             .size([400.0, 600.0], Condition::FirstUseEver)
             .build(&ui, || {
                 for rom in &self._roms {
-                    if ui.button(&ImString::new(rom.file_name().unwrap().to_str().unwrap()), [0 as f32, 0 as f32]) {
+                    if ui.button(
+                        &ImString::new(rom.file_name().unwrap().to_str().unwrap()),
+                        [0 as f32, 0 as f32],
+                    ) {
                         self._emulator.run(rom);
                     }
                 }
             });
 
-            let window = imgui::Window::new(im_str!("CPU"));
-            window
-                .size([400.0, 600.0], Condition::FirstUseEver)
-                .build(&ui, || {
-                    ui.text(format!("PC: {}", self._emulator.pc));
-                });            
+        let window = imgui::Window::new(im_str!("CPU"));
+        window
+            .size([400.0, 600.0], Condition::FirstUseEver)
+            .build(&ui, || {
+                ui.text(format!("PC: {}", self._emulator.pc));
+            });
 
         if !self._emulator.is_halting() {
             self._emulator.execute_instruction()
@@ -69,27 +70,27 @@ impl Chip8App {
 
     fn set_key_state(&mut self, code: VirtualKeyCode, state: bool) {
         self._emulator.keypad.set(
-        match code {
-            VirtualKeyCode::Key1 => 0,
-            VirtualKeyCode::Key2 => 1,
-            VirtualKeyCode::Key3 => 2,
-            VirtualKeyCode::Key4 => 3,
-            VirtualKeyCode::Q => 4,
-            VirtualKeyCode::W => 5,
-            VirtualKeyCode::E => 6,
-            VirtualKeyCode::R => 7,
-            VirtualKeyCode::A => 8,
-            VirtualKeyCode::S => 9,
-            VirtualKeyCode::D => 10,
-            VirtualKeyCode::F => 11,
-            VirtualKeyCode::Z => 12,
-            VirtualKeyCode::X => 13,
-            VirtualKeyCode::C => 14,
-            VirtualKeyCode::V => 15,
-            _ => return
-        }
-        , state)
-
+            match code {
+                VirtualKeyCode::Key1 => 0,
+                VirtualKeyCode::Key2 => 1,
+                VirtualKeyCode::Key3 => 2,
+                VirtualKeyCode::Key4 => 3,
+                VirtualKeyCode::Q => 4,
+                VirtualKeyCode::W => 5,
+                VirtualKeyCode::E => 6,
+                VirtualKeyCode::R => 7,
+                VirtualKeyCode::A => 8,
+                VirtualKeyCode::S => 9,
+                VirtualKeyCode::D => 10,
+                VirtualKeyCode::F => 11,
+                VirtualKeyCode::Z => 12,
+                VirtualKeyCode::X => 13,
+                VirtualKeyCode::C => 14,
+                VirtualKeyCode::V => 15,
+                _ => return,
+            },
+            state,
+        )
     }
 
     pub fn run(mut self: Rc<Self>) {
@@ -187,7 +188,7 @@ impl Chip8App {
         let mut last_cursor = None;
 
         // Event loop
-        event_loop.run( move |event, _, control_flow| {
+        event_loop.run(move |event, _, control_flow| {
             let self_mut = Rc::get_mut(&mut self).unwrap();
 
             *control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -279,13 +280,17 @@ impl Chip8App {
                         for y in 0..screen_h {
                             let x0 = x * 4;
                             let y0 = y * 4;
-                            screen_raw_data[y0 * screen_w + x0] = if self_mut._emulator.screen.get_pixel(x, y) { 0xFF} else {0};
+                            screen_raw_data[y0 * screen_w + x0] =
+                                if self_mut._emulator.screen.get_pixel(x, y) {
+                                    0xFF
+                                } else {
+                                    0
+                                };
                             screen_raw_data[y0 * screen_w + x0 + 1] = 0;
                             screen_raw_data[y0 * screen_w + x0 + 2] = 0;
                             screen_raw_data[y0 * screen_w + x0 + 3] = 0xFF;
                         }
                     }
-            
 
                     // Uploaded update screen
                     renderer.update_texture(
@@ -332,8 +337,7 @@ impl Chip8App {
     }
 }
 
-pub fn run() 
-{
-    let mut app = Rc::new(Chip8App::new());
+pub fn run() {
+    let app = Rc::new(Chip8App::new());
     app.run()
 }
