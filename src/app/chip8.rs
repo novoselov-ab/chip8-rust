@@ -3,16 +3,11 @@ use rand::Rng;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Default)]
-pub struct Screen {
-    data: Vec<u8>,
-}
+/// chip8 original screen size
+pub const SCREEN_SIZE: (usize, usize) = (64, 32);
 
-pub const SCREEN_WIDTH: usize = 64;
-pub const SCREEN_HEIGHT: usize = 32;
-
-// TODO: try const
-pub static FONT_DATA: [u8; 80] = [
+/// predefined font sprites
+const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -31,23 +26,40 @@ pub static FONT_DATA: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
-impl Screen {
-    pub fn new() -> Self {
+/// Screen buffer.
+pub struct Screen {
+    buffer: [u8; SCREEN_SIZE.0 * SCREEN_SIZE.1],
+    dirty: bool,
+}
+
+impl Default for Screen {
+    fn default() -> Self {
         Screen {
-            data: vec![0; SCREEN_WIDTH * SCREEN_HEIGHT],
+            buffer: [0u8; SCREEN_SIZE.0 * SCREEN_SIZE.1],
+            dirty: true,
         }
     }
+}
 
+impl Screen {
     pub fn clear(&mut self) {
-        self.data = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
+        *self = Self::default();
+    }
+
+    pub fn reset_dirty(&mut self) {
+        self.dirty = false;
+    }
+    pub fn is_dirty(&mut self) -> bool {
+        self.dirty
     }
 
     pub fn set_pixel(&mut self, x: usize, y: usize, v: bool) {
-        self.data[x + y * SCREEN_WIDTH] = v as u8;
+        self.buffer[x + y * SCREEN_SIZE.0] = v as u8;
+        self.dirty = true;
     }
 
     pub fn get_pixel(&mut self, x: usize, y: usize) -> bool {
-        self.data[x + y * SCREEN_WIDTH] == 1
+        self.buffer[x + y * SCREEN_SIZE.0] == 1
     }
 
     pub fn draw_sprite(&mut self, x: usize, y: usize, sprite: &[u8]) -> bool {
@@ -58,8 +70,8 @@ impl Screen {
             for i in 0..8 {
                 let new_value = row >> (7 - i) & 0x01;
                 if new_value == 1 {
-                    let xi = (x + i) % SCREEN_WIDTH;
-                    let yj = (y + j) % SCREEN_HEIGHT;
+                    let xi = (x + i) % SCREEN_SIZE.0;
+                    let yj = (y + j) % SCREEN_SIZE.1;
                     let old_value = self.get_pixel(xi, yj);
                     if old_value {
                         collision = true;
@@ -72,14 +84,16 @@ impl Screen {
     }
 }
 
-const KEY_COUNT: usize = 16;
-
+/// chip8 keypad state
 #[derive(Default)]
 pub struct Keypad {
-    keys: [bool; KEY_COUNT],
+    keys: [bool; Self::KEY_COUNT],
 }
 
 impl Keypad {
+    /// chip8 has 16 keys keypad
+    const KEY_COUNT: usize = 16;
+
     pub fn is_pressed(&self, key: u8) -> bool {
         self.keys[key as usize]
     }
@@ -89,11 +103,7 @@ impl Keypad {
         println!("{0} -> {1}", index, down);
     }
 
-    pub fn reset(&mut self) {
-        self.keys = [false; KEY_COUNT];
-    }
-
-    pub fn get_pressed(&self) -> Option<u8> {
+    fn get_pressed_key(&self) -> Option<u8> {
         for i in 0..self.keys.len() {
             if self.is_pressed(i as u8) {
                 return Some(i as u8);
@@ -103,9 +113,10 @@ impl Keypad {
     }
 }
 
+/// chip8 main emulator class. It is basically CPU + keypad, memory, screen etc.
 #[derive(Default)]
 pub struct Emulator {
-    _halt: bool,
+    halt: bool,
     pub screen: Screen,
     pub keypad: Keypad,
     memory: Vec<u8>,
@@ -122,25 +133,25 @@ pub struct Emulator {
 impl Emulator {
     pub fn new() -> Self {
         Emulator {
-            _halt: true,
-            screen: Screen::new(),
+            halt: true,
+            pc: 0x200,
             ..Default::default()
         }
     }
 
     pub fn is_halting(&self) -> bool {
-        self._halt
+        self.halt
     }
 
     pub fn get_code(&self) -> &[u8] {
         if self.memory.is_empty() {
-            return &[]
+            return &[];
         }
         &self.memory[0x200..0x200 + self.code_len]
     }
 
-    pub fn run(&mut self, romfile: &PathBuf) {
-        println!("Reading... {0}", romfile.display());
+    pub fn load_rom(&mut self, romfile: &PathBuf) {
+        *self = Self::new();
 
         let contents = match fs::read(romfile) {
             Err(e) => {
@@ -153,12 +164,7 @@ impl Emulator {
         self.memory = Vec::new();
         self.memory.resize(65535, 0);
 
-        self.screen.clear();
-        self.keypad.reset();
-
-        self.delay = 0;
-
-        self._halt = false;
+        self.halt = false;
 
         // Copy, use splice?
         for i in 0..contents.len() {
@@ -171,28 +177,17 @@ impl Emulator {
             self.memory[i] = FONT_DATA[i];
         }
 
-        // Reset rs
-        for i in 0..self.rs.len() {
-            self.rs[i] = 0;
-        }
-
-        self.pc = 0x200;
         self.rng = rand::thread_rng();
-
-        // println!("Content:");
-        // for b in contents {
-        //     println!("{0}", b);
-        // }
-
-        // println!("Memory:");
-        //println!("{0}", m.bytes);
-
-        // for b in m.bytes.iter() {
-        //     println!("{0}", b);
-        // }
     }
 
-    pub fn update_timer(&mut self, dt: f32) {
+    pub fn update(&mut self, dt: f32) {
+        if !self.is_halting() {
+            self.update_timer(dt);
+            self.execute_instruction();
+        }
+    }
+
+    fn update_timer(&mut self, dt: f32) {
         if self.delay > 0 {
             self.total_dt += dt;
             const TIMER_PERIOD: f32 = 1.0 / 60.0;
@@ -203,7 +198,7 @@ impl Emulator {
         }
     }
 
-    pub fn execute_instruction(&mut self) {
+    fn execute_instruction(&mut self) {
         let opcode = ((self.memory[self.pc as usize] as u16) << 8)
             | (self.memory[(self.pc as usize) + 1] as u16);
         let nibbles = (
@@ -362,7 +357,7 @@ impl Emulator {
             }
             (0xF, _, 0x0, 0xA) => {
                 // Wait for a keypress and store the result in register VX
-                if let Some(key) = self.keypad.get_pressed() {
+                if let Some(key) = self.keypad.get_pressed_key() {
                     self.rs[x] = key;
                 } else {
                     self.pc -= 2;

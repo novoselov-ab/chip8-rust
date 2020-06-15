@@ -44,12 +44,12 @@ impl Chip8App {
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
             .build(&ui, || {
-                for rom in &self._roms {
+                for rom_file in &self._roms {
                     if ui.button(
-                        &ImString::new(rom.file_name().unwrap().to_str().unwrap()),
+                        &ImString::new(rom_file.file_name().unwrap().to_str().unwrap()),
                         [0 as f32, 0 as f32],
                     ) {
-                        self._emulator.run(rom);
+                        self._emulator.load_rom(rom_file);
                     }
                 }
             });
@@ -72,20 +72,13 @@ impl Chip8App {
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
             .build(&ui, || {
-
                 let code = self._emulator.get_code();
                 for i in 0..code.len() {
                     ui.text(format!("{}: {:#X}", i, code[i]));
                 }
-
             });
 
-    
-        if !self._emulator.is_halting() {
-            self._emulator.execute_instruction()
-        }
-
-        self._emulator.update_timer(ui.io().delta_time);
+        self._emulator.update(ui.io().delta_time);
     }
 
     fn set_key_state(&mut self, code: VirtualKeyCode, state: bool) {
@@ -199,8 +192,8 @@ impl Chip8App {
 
         let mut last_frame = Instant::now();
 
-        let screen_w = chip8::SCREEN_WIDTH;
-        let screen_h = chip8::SCREEN_HEIGHT;
+        let screen_w = chip8::SCREEN_SIZE.0;
+        let screen_h = chip8::SCREEN_SIZE.1;
         let mut screen_raw_data: Vec<u8> = vec![0; screen_w * screen_h * 4];
         let screen_texture_id = renderer.create_texture(&device, screen_w as u32, screen_h as u32);
         let mut screen_scale = 9.0_f32;
@@ -295,19 +288,26 @@ impl Chip8App {
                     // Callback to the user
                     self_mut.draw_ui(&ui);
 
-                    let screen_w = chip8::SCREEN_WIDTH;
-                    let screen_h = chip8::SCREEN_HEIGHT;
-                    for x in 0..screen_w {
-                        for y in 0..screen_h {
-                            let x0 = x * 4;
-                            let y0 = y * 4;
+                    if self_mut._emulator.screen.is_dirty() {
+                        self_mut._emulator.screen.reset_dirty();
+                        let screen_w = chip8::SCREEN_SIZE.0;
+                        let screen_h = chip8::SCREEN_SIZE.1;
+                        for x in 0..screen_w {
+                            for y in 0..screen_h {
+                                let x0 = x * 4;
+                                let y0 = y * 4;
 
-                            let v = if self_mut._emulator.screen.get_pixel(x, y) { 0xFF } else { 0 };
+                                let v = if self_mut._emulator.screen.get_pixel(x, y) {
+                                    0xFF
+                                } else {
+                                    0
+                                };
 
-                            screen_raw_data[y0 * screen_w + x0] = v;
-                            screen_raw_data[y0 * screen_w + x0 + 1] = v;
-                            screen_raw_data[y0 * screen_w + x0 + 2] = v;
-                            screen_raw_data[y0 * screen_w + x0 + 3] = 0xFF;
+                                screen_raw_data[y0 * screen_w + x0] = v;
+                                screen_raw_data[y0 * screen_w + x0 + 1] = v;
+                                screen_raw_data[y0 * screen_w + x0 + 2] = v;
+                                screen_raw_data[y0 * screen_w + x0 + 3] = 0xFF;
+                            }
                         }
                     }
 
@@ -324,17 +324,18 @@ impl Chip8App {
                     // Screen window
                     {
                         let window = imgui::Window::new(im_str!("Screen")).always_auto_resize(true);
-                        window
-                            .build(&ui, || {
-                                let size = [
-                                    (screen_w as f32) * screen_scale,
-                                    (screen_h as f32) * screen_scale,
-                                ];
-                                Image::new(screen_texture_id, size).tint_col(screen_color).build(&ui);
-                                ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
-                                ui.same_line(0.0);
-                                imgui::ColorEdit::new(im_str!("Color"), &mut screen_color).build(&ui);
-                            });
+                        window.build(&ui, || {
+                            let size = [
+                                (screen_w as f32) * screen_scale,
+                                (screen_h as f32) * screen_scale,
+                            ];
+                            Image::new(screen_texture_id, size)
+                                .tint_col(screen_color)
+                                .build(&ui);
+                            ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
+                            ui.same_line(0.0);
+                            imgui::ColorEdit::new(im_str!("Color"), &mut screen_color).build(&ui);
+                        });
                     }
 
                     let mut encoder: wgpu::CommandEncoder = device
