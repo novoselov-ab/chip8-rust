@@ -1,9 +1,8 @@
-mod imgui_wgpu;
-
+use crate::chip8;
+use crate::imgui_wgpu::Renderer;
 use futures::executor::block_on;
 use glob::glob;
 use imgui::*;
-use imgui_wgpu::Renderer;
 use imgui_winit_support;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -15,7 +14,7 @@ use winit::{
     window::Window,
 };
 
-mod chip8;
+
 
 fn find_roms() -> glob::Paths {
     let exe_path = std::env::current_exe();
@@ -24,8 +23,12 @@ fn find_roms() -> glob::Paths {
     glob(rom_path.join("**/*.ch8").to_str().unwrap()).unwrap()
 }
 
+fn to_rgb01(color: [i32; 4]) -> [f32; 4] {
+    [color[0] as f32 / 255.0, color[1] as f32 / 255.0, color[2] as f32 / 255.0, color[3] as f32 / 255.0]
+}
+
 pub struct Chip8App {
-    _roms: Vec<PathBuf>,
+    rom_files: Vec<PathBuf>,
     emulator: chip8::Emulator,
 }
 
@@ -34,20 +37,22 @@ impl Chip8App {
         let roms = find_roms().map(|res| res.unwrap()).collect();
 
         Chip8App {
-            _roms: roms,
+            rom_files: roms,
             emulator: chip8::Emulator::new(),
         }
     }
 
     fn draw_ui(&mut self, ui: &imgui::Ui) {
+        // Window with list of ROMs
         let window = imgui::Window::new(im_str!("ROMs"));
         window
             .size([400.0, 600.0], Condition::Once)
-            .position([0.0, 0.0], Condition::Once)
+            .position([5.0, 5.0], Condition::Once)
             .build(&ui, || {
-                for rom_file in &self._roms {
+                for rom_file in &self.rom_files {
+                    let filename= ImString::new(rom_file.file_name().unwrap().to_str().unwrap());
                     if ui.button(
-                        &ImString::new(rom_file.file_name().unwrap().to_str().unwrap()),
+                        &filename,
                         [0 as f32, 0 as f32],
                     ) {
                         self.emulator.load_rom(rom_file);
@@ -55,10 +60,11 @@ impl Chip8App {
                 }
             });
 
+        // Window with CPU state
         let window = imgui::Window::new(im_str!("CPU"));
         window
-            .size([400.0, 200.0], Condition::FirstUseEver)
-            .position([1200.0, 0.0], Condition::Once)
+            .size([395.0, 200.0], Condition::FirstUseEver)
+            .position([1200.0, 5.0], Condition::Once)
             .build(&ui, || {
                 ui.text(format!("PC: {:#X}", self.emulator.pc));
                 ui.text(format!("I: {:#X}", self.emulator.ri));
@@ -70,15 +76,25 @@ impl Chip8App {
                 }
             });
 
+        // Window with program code
         let window = imgui::Window::new(im_str!("Code"));
         window
-            .size([400.0, 600.0], Condition::FirstUseEver)
+            .size([395.0, 600.0], Condition::FirstUseEver)
             .position([1200.0, 220.0], Condition::Once)
             .build(&ui, || {
                 let code = self.emulator.get_code();
                 for i in 0..code.len() {
                     ui.text(format!("{}: {:#X}", i, code[i]));
                 }
+            });
+
+        // Help Window
+        let window = imgui::Window::new(im_str!("Help"));
+        window
+            .size([395.0, 160.0], Condition::FirstUseEver)
+            .position([5.0, 660.0], Condition::Once)
+            .build(&ui, || {
+                ui.text(im_str!("Select ROM file, to control use keys:\n1,2,3,4,\nQ,W,E,R,\nA,S,D,F,\nZ,X,C,V\n\nHave fun!"));
             });
 
         self.emulator.update(ui.io().delta_time);
@@ -176,13 +192,41 @@ impl Chip8App {
             }),
         }]);
 
+        // Restyle a bit
+        let style = imgui.style_mut();
+        style.window_rounding = 8.0;
+        style.scrollbar_rounding = 8.0;
+        style.frame_rounding = 8.0;
+        style[imgui::StyleColor::TitleBg] = to_rgb01( [110, 110, 100, 62]);
+        style[imgui::StyleColor::TitleBgCollapsed] = to_rgb01( [110, 110, 100, 52]);
+        style[imgui::StyleColor::TitleBgActive] = to_rgb01( [110, 110, 100, 87]);
+        style[imgui::StyleColor::Header] = to_rgb01([110, 110, 110, 52]);
+        style[imgui::StyleColor::HeaderHovered] = to_rgb01([110, 110, 110, 92]);
+        style[imgui::StyleColor::HeaderActive] = to_rgb01([110, 110, 110, 72]);
+        style[imgui::StyleColor::ScrollbarBg] = to_rgb01([110, 110, 110, 12]);
+        style[imgui::StyleColor::ScrollbarGrab] = to_rgb01([110, 110, 110, 52]);
+        style[imgui::StyleColor::ScrollbarGrabHovered] = to_rgb01([110, 110, 110, 92]);
+        style[imgui::StyleColor::ScrollbarGrabActive] = to_rgb01([110, 110, 110, 72]);
+        style[imgui::StyleColor::SliderGrab] = to_rgb01([110, 110, 110, 52]);
+        style[imgui::StyleColor::SliderGrabActive] = to_rgb01([110, 110, 110, 72]);
+        style[imgui::StyleColor::Button] = to_rgb01([182,182, 182, 60]);
+        style[imgui::StyleColor::ButtonHovered] = to_rgb01([182,182, 182, 200]);
+        style[imgui::StyleColor::ButtonActive] = to_rgb01([182,182, 182, 140]);
+        style[imgui::StyleColor::PopupBg] = to_rgb01([0, 0, 0, 230]);
+        style[imgui::StyleColor::TextSelectedBg] = to_rgb01([10, 23, 18, 180]);
+        style[imgui::StyleColor::FrameBg] = to_rgb01([70, 70, 70, 30]);
+        style[imgui::StyleColor::FrameBgHovered] = to_rgb01([70, 70, 70, 70]);
+        style[imgui::StyleColor::FrameBgActive] = to_rgb01([70, 70, 70, 50]);
+        style[imgui::StyleColor::MenuBarBg] = to_rgb01([70, 70, 70, 30]);
+
+
         //
         // Set up dear imgui wgpu renderer
         //
         let clear_color = wgpu::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
+            r: 0.03,
+            g: 0.03,
+            b: 0.03,
             a: 1.0,
         };
         let mut renderer = Renderer::new(
@@ -362,9 +406,4 @@ impl Chip8App {
             platform.handle_event(imgui.io_mut(), &window, &event);
         });
     }
-}
-
-pub fn run() {
-    let app = Rc::new(Chip8App::new());
-    app.run()
 }
