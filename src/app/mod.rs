@@ -26,7 +26,7 @@ fn find_roms() -> glob::Paths {
 
 pub struct Chip8App {
     _roms: Vec<PathBuf>,
-    _emulator: chip8::Emulator,
+    emulator: chip8::Emulator,
 }
 
 impl Chip8App {
@@ -35,33 +35,35 @@ impl Chip8App {
 
         Chip8App {
             _roms: roms,
-            _emulator: chip8::Emulator::new(),
+            emulator: chip8::Emulator::new(),
         }
     }
 
     fn draw_ui(&mut self, ui: &imgui::Ui) {
         let window = imgui::Window::new(im_str!("ROMs"));
         window
-            .size([400.0, 600.0], Condition::FirstUseEver)
+            .size([400.0, 600.0], Condition::Once)
+            .position([0.0, 0.0], Condition::Once)
             .build(&ui, || {
                 for rom_file in &self._roms {
                     if ui.button(
                         &ImString::new(rom_file.file_name().unwrap().to_str().unwrap()),
                         [0 as f32, 0 as f32],
                     ) {
-                        self._emulator.load_rom(rom_file);
+                        self.emulator.load_rom(rom_file);
                     }
                 }
             });
 
         let window = imgui::Window::new(im_str!("CPU"));
         window
-            .size([400.0, 600.0], Condition::FirstUseEver)
+            .size([400.0, 200.0], Condition::FirstUseEver)
+            .position([1200.0, 0.0], Condition::Once)
             .build(&ui, || {
-                ui.text(format!("PC: {:#X}", self._emulator.pc));
-                ui.text(format!("I: {:#X}", self._emulator.ri));
-                for i in 0..self._emulator.rs.len() {
-                    ui.text(format!("V{:X}: {:#X} ", i, self._emulator.rs[i]));
+                ui.text(format!("PC: {:#X}", self.emulator.pc));
+                ui.text(format!("I: {:#X}", self.emulator.ri));
+                for i in 0..self.emulator.rs.len() {
+                    ui.text(format!("V{:X}: {:#X} ", i, self.emulator.rs[i]));
                     if (i + 1) % 4 != 0 {
                         ui.same_line(0.0);
                     }
@@ -71,18 +73,19 @@ impl Chip8App {
         let window = imgui::Window::new(im_str!("Code"));
         window
             .size([400.0, 600.0], Condition::FirstUseEver)
+            .position([1200.0, 220.0], Condition::Once)
             .build(&ui, || {
-                let code = self._emulator.get_code();
+                let code = self.emulator.get_code();
                 for i in 0..code.len() {
                     ui.text(format!("{}: {:#X}", i, code[i]));
                 }
             });
 
-        self._emulator.update(ui.io().delta_time);
+        self.emulator.update(ui.io().delta_time);
     }
 
     fn set_key_state(&mut self, code: VirtualKeyCode, state: bool) {
-        self._emulator.keypad.set(
+        self.emulator.keypad.set(
             match code {
                 VirtualKeyCode::Key1 => 0,
                 VirtualKeyCode::Key2 => 1,
@@ -113,10 +116,10 @@ impl Chip8App {
         let (window, mut size, surface) = {
             let window = Window::new(&event_loop).unwrap();
             window.set_inner_size(LogicalSize {
-                width: 1280.0,
-                height: 720.0,
+                width: 1600.0,
+                height: 900.0,
             });
-            window.set_title("chip8");
+            window.set_title("chip8-rust");
             let size = window.inner_size();
 
             let surface = wgpu::Surface::create(&window);
@@ -197,7 +200,7 @@ impl Chip8App {
         let mut screen_raw_data: Vec<u8> = vec![0; screen_w * screen_h * 4];
         let screen_texture_id = renderer.create_texture(&device, screen_w as u32, screen_h as u32);
         let mut screen_scale = 9.0_f32;
-        let mut screen_color = [1.0_f32, 1.0_f32, 1.0_f32, 1.0_f32];
+        let mut screen_color = [0.09_f32, 0.6_f32, 0.0_f32, 1.0_f32];
 
         let mut last_cursor = None;
 
@@ -288,25 +291,24 @@ impl Chip8App {
                     // Callback to the user
                     self_mut.draw_ui(&ui);
 
-                    if self_mut._emulator.screen.is_dirty() {
-                        self_mut._emulator.screen.reset_dirty();
+                    // Read and update screen buffer if changed:
+                    if self_mut.emulator.screen.is_dirty() {
+                        self_mut.emulator.screen.reset_dirty();
                         let screen_w = chip8::SCREEN_SIZE.0;
                         let screen_h = chip8::SCREEN_SIZE.1;
                         for x in 0..screen_w {
                             for y in 0..screen_h {
-                                let x0 = x * 4;
-                                let y0 = y * 4;
-
-                                let v = if self_mut._emulator.screen.get_pixel(x, y) {
+                                let v = if self_mut.emulator.screen.get_pixel(x, y) {
                                     0xFF
                                 } else {
                                     0
                                 };
 
-                                screen_raw_data[y0 * screen_w + x0] = v;
-                                screen_raw_data[y0 * screen_w + x0 + 1] = v;
-                                screen_raw_data[y0 * screen_w + x0 + 2] = v;
-                                screen_raw_data[y0 * screen_w + x0 + 3] = 0xFF;
+                                let x0 = x * 4;
+                                let y0 = y * 4;
+                                let pos = y0 * screen_w;
+                                screen_raw_data[pos + x0..pos + x0 + 4]
+                                    .copy_from_slice(&[v, v, v, 0xFF]);
                             }
                         }
                     }
@@ -324,18 +326,21 @@ impl Chip8App {
                     // Screen window
                     {
                         let window = imgui::Window::new(im_str!("Screen")).always_auto_resize(true);
-                        window.build(&ui, || {
-                            let size = [
-                                (screen_w as f32) * screen_scale,
-                                (screen_h as f32) * screen_scale,
-                            ];
-                            Image::new(screen_texture_id, size)
-                                .tint_col(screen_color)
-                                .build(&ui);
-                            ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
-                            ui.same_line(0.0);
-                            imgui::ColorEdit::new(im_str!("Color"), &mut screen_color).build(&ui);
-                        });
+                        window
+                            .position([500.0, 200.0], Condition::Once)
+                            .build(&ui, || {
+                                let size = [
+                                    (screen_w as f32) * screen_scale,
+                                    (screen_h as f32) * screen_scale,
+                                ];
+                                Image::new(screen_texture_id, size)
+                                    .tint_col(screen_color)
+                                    .build(&ui);
+                                ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
+                                ui.same_line(0.0);
+                                imgui::ColorEdit::new(im_str!("Color"), &mut screen_color)
+                                    .build(&ui);
+                            });
                     }
 
                     let mut encoder: wgpu::CommandEncoder = device

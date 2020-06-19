@@ -26,6 +26,9 @@ const FONT_DATA: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
+/// Total RAM size
+const MEMORY_SIZE: usize = 65535;
+
 /// Screen buffer.
 pub struct Screen {
     buffer: [u8; SCREEN_SIZE.0 * SCREEN_SIZE.1],
@@ -100,7 +103,6 @@ impl Keypad {
 
     pub fn set(&mut self, index: u8, down: bool) {
         self.keys[index as usize] = down;
-        println!("{0} -> {1}", index, down);
     }
 
     fn get_pressed_key(&self) -> Option<u8> {
@@ -132,15 +134,18 @@ pub struct Emulator {
 
 impl Emulator {
     pub fn new() -> Self {
-        Emulator {
+        let mut e = Emulator {
             halt: true,
             pc: 0x200,
             ..Default::default()
-        }
-    }
+        };
+        // 0 init all ROM
+        e.memory.resize(MEMORY_SIZE, 0);
 
-    pub fn is_halting(&self) -> bool {
-        self.halt
+        // Copy Font data into memory
+        e.memory[..FONT_DATA.len()].copy_from_slice(&FONT_DATA[..]);
+
+        e
     }
 
     pub fn get_code(&self) -> &[u8] {
@@ -151,8 +156,10 @@ impl Emulator {
     }
 
     pub fn load_rom(&mut self, romfile: &PathBuf) {
+        // Reset emulator to initial state
         *self = Self::new();
 
+        // Load ROM from file
         let contents = match fs::read(romfile) {
             Err(e) => {
                 println!("Can't read file: '{0}'. Error: {1}", romfile.display(), e);
@@ -161,27 +168,16 @@ impl Emulator {
             Ok(f) => f,
         };
 
-        self.memory = Vec::new();
-        self.memory.resize(65535, 0);
-
-        self.halt = false;
-
-        // Copy, use splice?
-        for i in 0..contents.len() {
-            self.memory[i + 0x200] = contents[i];
-        }
+        // Copy rom in memory
+        self.memory[0x200..0x200 + contents.len()].copy_from_slice(&contents[..]);
         self.code_len = contents.len();
 
-        // Copy, use splice?
-        for i in 0..FONT_DATA.len() {
-            self.memory[i] = FONT_DATA[i];
-        }
-
         self.rng = rand::thread_rng();
+        self.halt = false;
     }
 
     pub fn update(&mut self, dt: f32) {
-        if !self.is_halting() {
+        if !self.halt {
             self.update_timer(dt);
             self.execute_instruction();
         }
