@@ -4,18 +4,16 @@ use futures::executor::block_on;
 use glob::glob;
 use imgui::*;
 use imgui_winit_support;
-use wgpu::{Device, Queue};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
+use wgpu::{Device, Queue};
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-
-
 
 fn find_roms() -> glob::Paths {
     let exe_path = std::env::current_exe();
@@ -25,7 +23,12 @@ fn find_roms() -> glob::Paths {
 }
 
 fn to_rgb01(color: [i32; 4]) -> [f32; 4] {
-    [color[0] as f32 / 255.0, color[1] as f32 / 255.0, color[2] as f32 / 255.0, color[3] as f32 / 255.0]
+    [
+        color[0] as f32 / 255.0,
+        color[1] as f32 / 255.0,
+        color[2] as f32 / 255.0,
+        color[3] as f32 / 255.0,
+    ]
 }
 
 // Screen is used to store and update screen buffer and draw it as window with a texture
@@ -34,12 +37,11 @@ struct ScreenBuffer {
     data: Vec<u8>,
     ui_scale: f32,
     ui_color: [f32; 4],
-    texture_id: TextureId
+    texture_id: TextureId,
 }
 
 impl ScreenBuffer {
     fn new(renderer: &mut Renderer, device: &Device) -> Self {
-
         let size = (chip8::SCREEN_SIZE.0, chip8::SCREEN_SIZE.1);
         let texture_id = renderer.create_texture(&device, size.0 as u32, size.1 as u32);
 
@@ -47,8 +49,8 @@ impl ScreenBuffer {
             size: size,
             data: vec![0; size.0 * size.1 * 4],
             ui_scale: 9.0_f32,
-            ui_color:[0.09_f32, 0.6_f32, 0.0_f32, 1.0_f32],
-            texture_id: texture_id
+            ui_color: [0.09_f32, 0.6_f32, 0.0_f32, 1.0_f32],
+            texture_id: texture_id,
         }
     }
 
@@ -67,13 +69,17 @@ impl ScreenBuffer {
                     .build(&ui);
                 ui.drag_float(im_str!("Scale"), &mut self.ui_scale).build();
                 ui.same_line(0.0);
-                imgui::ColorEdit::new(im_str!("Color"), &mut self.ui_color)
-                    .build(&ui);
+                imgui::ColorEdit::new(im_str!("Color"), &mut self.ui_color).build(&ui);
             });
     }
 
-    fn update(&mut self, emulator: &chip8::Emulator, renderer: &mut Renderer, device: &Device, mut queue: &mut Queue)
-    {
+    fn update(
+        &mut self,
+        emulator: &chip8::Emulator,
+        renderer: &mut Renderer,
+        device: &Device,
+        mut queue: &mut Queue,
+    ) {
         // Update pixels in screen buffer from emulator's screen
         for x in 0..self.size.0 {
             for y in 0..self.size.1 {
@@ -86,8 +92,7 @@ impl ScreenBuffer {
                 let x0 = x * 4;
                 let y0 = y * 4;
                 let pos = y0 * self.size.0;
-                self.data[pos + x0..pos + x0 + 4]
-                    .copy_from_slice(&[v, v, v, 0xFF]);
+                self.data[pos + x0..pos + x0 + 4].copy_from_slice(&[v, v, v, 0xFF]);
             }
         }
 
@@ -100,7 +105,6 @@ impl ScreenBuffer {
             self.size.0 as u32,
             self.size.1 as u32,
         );
-
     }
 }
 
@@ -108,7 +112,6 @@ pub struct Chip8App {
     rom_files: Vec<PathBuf>,
     emulator: chip8::Emulator,
 }
-
 
 impl Chip8App {
     pub fn new() -> Self {
@@ -128,11 +131,8 @@ impl Chip8App {
             .position([5.0, 5.0], Condition::Once)
             .build(&ui, || {
                 for rom_file in &self.rom_files {
-                    let filename= ImString::new(rom_file.file_name().unwrap().to_str().unwrap());
-                    if ui.button(
-                        &filename,
-                        [0 as f32, 0 as f32],
-                    ) {
+                    let filename = ImString::new(rom_file.file_name().unwrap().to_str().unwrap());
+                    if ui.button(&filename, [0 as f32, 0 as f32]) {
                         self.emulator.load_rom(rom_file);
                     }
                 }
@@ -152,6 +152,13 @@ impl Chip8App {
                         ui.same_line(0.0);
                     }
                 }
+                ui.text(format!("timer: {}", self.emulator.delay));
+
+                ui.text(format!("stack (size: {}):", self.emulator.stack.len()));
+                for v in self.emulator.stack.iter() {
+                    ui.same_line(0.0);
+                    ui.text(format!("{:X}", v));
+                }
             });
 
         // Window with program code
@@ -160,9 +167,20 @@ impl Chip8App {
             .size([395.0, 600.0], Condition::FirstUseEver)
             .position([1200.0, 220.0], Condition::Once)
             .build(&ui, || {
-                let code = self.emulator.get_code();
-                for i in 0..code.len() {
-                    ui.text(format!("{}: {:#X}", i, code[i]));
+                let code_range = self.emulator.get_code_range();
+                let pc = self.emulator.pc as usize;
+                let code = &self.emulator.memory[code_range.0..code_range.1];
+                for i in (1..code.len()).step_by(2) {
+                    let mut color_stack: Option<ColorStackToken> = None;
+                    if pc == (i + code_range.0 - 1) {
+                        ui.set_scroll_here_y();
+                        color_stack =
+                            Some(ui.push_style_color(StyleColor::Text, to_rgb01([0, 255, 0, 255])));
+                    }
+                    ui.text(format!("{:>4}: {:02X}{:02X}", i, code[i - 1], code[i]));
+                    if let Some(c) = color_stack {
+                        c.pop(&ui);
+                    }
                 }
             });
 
@@ -273,9 +291,9 @@ impl Chip8App {
         style.window_rounding = 8.0;
         style.scrollbar_rounding = 8.0;
         style.frame_rounding = 8.0;
-        style[imgui::StyleColor::TitleBg] = to_rgb01( [110, 110, 100, 62]);
-        style[imgui::StyleColor::TitleBgCollapsed] = to_rgb01( [110, 110, 100, 52]);
-        style[imgui::StyleColor::TitleBgActive] = to_rgb01( [110, 110, 100, 87]);
+        style[imgui::StyleColor::TitleBg] = to_rgb01([110, 110, 100, 62]);
+        style[imgui::StyleColor::TitleBgCollapsed] = to_rgb01([110, 110, 100, 52]);
+        style[imgui::StyleColor::TitleBgActive] = to_rgb01([110, 110, 100, 87]);
         style[imgui::StyleColor::Header] = to_rgb01([110, 110, 110, 52]);
         style[imgui::StyleColor::HeaderHovered] = to_rgb01([110, 110, 110, 92]);
         style[imgui::StyleColor::HeaderActive] = to_rgb01([110, 110, 110, 72]);
@@ -285,16 +303,15 @@ impl Chip8App {
         style[imgui::StyleColor::ScrollbarGrabActive] = to_rgb01([110, 110, 110, 72]);
         style[imgui::StyleColor::SliderGrab] = to_rgb01([110, 110, 110, 52]);
         style[imgui::StyleColor::SliderGrabActive] = to_rgb01([110, 110, 110, 72]);
-        style[imgui::StyleColor::Button] = to_rgb01([182,182, 182, 60]);
-        style[imgui::StyleColor::ButtonHovered] = to_rgb01([182,182, 182, 200]);
-        style[imgui::StyleColor::ButtonActive] = to_rgb01([182,182, 182, 140]);
+        style[imgui::StyleColor::Button] = to_rgb01([182, 182, 182, 60]);
+        style[imgui::StyleColor::ButtonHovered] = to_rgb01([182, 182, 182, 200]);
+        style[imgui::StyleColor::ButtonActive] = to_rgb01([182, 182, 182, 140]);
         style[imgui::StyleColor::PopupBg] = to_rgb01([0, 0, 0, 230]);
         style[imgui::StyleColor::TextSelectedBg] = to_rgb01([10, 23, 18, 180]);
         style[imgui::StyleColor::FrameBg] = to_rgb01([70, 70, 70, 30]);
         style[imgui::StyleColor::FrameBgHovered] = to_rgb01([70, 70, 70, 70]);
         style[imgui::StyleColor::FrameBgActive] = to_rgb01([70, 70, 70, 50]);
         style[imgui::StyleColor::MenuBarBg] = to_rgb01([70, 70, 70, 30]);
-
 
         // Setup dear imgui wgpu renderer
         let clear_color = wgpu::Color {
@@ -409,7 +426,6 @@ impl Chip8App {
                         self_mut.emulator.screen.reset_dirty();
 
                         screen.update(&self_mut.emulator, &mut renderer, &device, &mut queue);
-
                     }
 
                     // Draw actual app UI

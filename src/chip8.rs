@@ -121,7 +121,7 @@ pub struct Emulator {
     halt: bool,
     pub screen: Screen,
     pub keypad: Keypad,
-    memory: Vec<u8>,
+    pub memory: Vec<u8>,
     code_len: usize,
     pub stack: Vec<u16>,
     pub rs: [u8; 16], // Data registers
@@ -148,11 +148,8 @@ impl Emulator {
         e
     }
 
-    pub fn get_code(&self) -> &[u8] {
-        if self.memory.is_empty() {
-            return &[];
-        }
-        &self.memory[0x200..0x200 + self.code_len]
+    pub fn get_code_range(&self) -> (usize, usize) {
+        (0x200, 0x200 + self.code_len)
     }
 
     pub fn load_rom(&mut self, romfile: &PathBuf) {
@@ -224,7 +221,6 @@ impl Emulator {
             }
             (0, _, _, _) => {
                 // Ignore 0NNN ?
-                panic!("0NNN");
             }
             (1, _, _, _) => {
                 // jump to adress
