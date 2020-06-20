@@ -52,7 +52,7 @@ impl Screen {
     pub fn reset_dirty(&mut self) {
         self.dirty = false;
     }
-    pub fn is_dirty(&mut self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.dirty
     }
 
@@ -61,7 +61,7 @@ impl Screen {
         self.dirty = true;
     }
 
-    pub fn get_pixel(&mut self, x: usize, y: usize) -> bool {
+    pub fn get_pixel(&self, x: usize, y: usize) -> bool {
         self.buffer[x + y * SCREEN_SIZE.0] == 1
     }
 

@@ -4,6 +4,7 @@ use futures::executor::block_on;
 use glob::glob;
 use imgui::*;
 use imgui_winit_support;
+use wgpu::{Device, Queue};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
@@ -27,10 +28,87 @@ fn to_rgb01(color: [i32; 4]) -> [f32; 4] {
     [color[0] as f32 / 255.0, color[1] as f32 / 255.0, color[2] as f32 / 255.0, color[3] as f32 / 255.0]
 }
 
+// Screen is used to store and update screen buffer and draw it as window with a texture
+struct ScreenBuffer {
+    size: (usize, usize),
+    data: Vec<u8>,
+    ui_scale: f32,
+    ui_color: [f32; 4],
+    texture_id: TextureId
+}
+
+impl ScreenBuffer {
+    fn new(renderer: &mut Renderer, device: &Device) -> Self {
+
+        let size = (chip8::SCREEN_SIZE.0, chip8::SCREEN_SIZE.1);
+        let texture_id = renderer.create_texture(&device, size.0 as u32, size.1 as u32);
+
+        ScreenBuffer {
+            size: size,
+            data: vec![0; size.0 * size.1 * 4],
+            ui_scale: 9.0_f32,
+            ui_color:[0.09_f32, 0.6_f32, 0.0_f32, 1.0_f32],
+            texture_id: texture_id
+        }
+    }
+
+    fn draw_ui(&mut self, ui: &imgui::Ui) {
+        // Screen window
+        let window = imgui::Window::new(im_str!("Screen")).always_auto_resize(true);
+        window
+            .position([500.0, 200.0], Condition::Once)
+            .build(&ui, || {
+                let size = [
+                    (self.size.0 as f32) * self.ui_scale,
+                    (self.size.1 as f32) * self.ui_scale,
+                ];
+                Image::new(self.texture_id, size)
+                    .tint_col(self.ui_color)
+                    .build(&ui);
+                ui.drag_float(im_str!("Scale"), &mut self.ui_scale).build();
+                ui.same_line(0.0);
+                imgui::ColorEdit::new(im_str!("Color"), &mut self.ui_color)
+                    .build(&ui);
+            });
+    }
+
+    fn update(&mut self, emulator: &chip8::Emulator, renderer: &mut Renderer, device: &Device, mut queue: &mut Queue)
+    {
+        // Update pixels in screen buffer from emulator's screen
+        for x in 0..self.size.0 {
+            for y in 0..self.size.1 {
+                let v = if emulator.screen.get_pixel(x, y) {
+                    0xFF
+                } else {
+                    0
+                };
+
+                let x0 = x * 4;
+                let y0 = y * 4;
+                let pos = y0 * self.size.0;
+                self.data[pos + x0..pos + x0 + 4]
+                    .copy_from_slice(&[v, v, v, 0xFF]);
+            }
+        }
+
+        // Uploaded updated screen texture data
+        renderer.update_texture(
+            self.texture_id,
+            &device,
+            &mut queue,
+            &self.data,
+            self.size.0 as u32,
+            self.size.1 as u32,
+        );
+
+    }
+}
+
 pub struct Chip8App {
     rom_files: Vec<PathBuf>,
     emulator: chip8::Emulator,
 }
+
 
 impl Chip8App {
     pub fn new() -> Self {
@@ -96,8 +174,6 @@ impl Chip8App {
             .build(&ui, || {
                 ui.text(im_str!("Select ROM file, to control use keys:\n1,2,3,4,\nQ,W,E,R,\nA,S,D,F,\nZ,X,C,V\n\nHave fun!"));
             });
-
-        self.emulator.update(ui.io().delta_time);
     }
 
     fn set_key_state(&mut self, code: VirtualKeyCode, state: bool) {
@@ -220,9 +296,7 @@ impl Chip8App {
         style[imgui::StyleColor::MenuBarBg] = to_rgb01([70, 70, 70, 30]);
 
 
-        //
-        // Set up dear imgui wgpu renderer
-        //
+        // Setup dear imgui wgpu renderer
         let clear_color = wgpu::Color {
             r: 0.03,
             g: 0.03,
@@ -239,12 +313,7 @@ impl Chip8App {
 
         let mut last_frame = Instant::now();
 
-        let screen_w = chip8::SCREEN_SIZE.0;
-        let screen_h = chip8::SCREEN_SIZE.1;
-        let mut screen_raw_data: Vec<u8> = vec![0; screen_w * screen_h * 4];
-        let screen_texture_id = renderer.create_texture(&device, screen_w as u32, screen_h as u32);
-        let mut screen_scale = 9.0_f32;
-        let mut screen_color = [0.09_f32, 0.6_f32, 0.0_f32, 1.0_f32];
+        let mut screen = ScreenBuffer::new(&mut renderer, &device);
 
         let mut last_cursor = None;
 
@@ -332,60 +401,21 @@ impl Chip8App {
                         .expect("Failed to prepare frame");
                     let ui = imgui.frame();
 
-                    // Callback to the user
-                    self_mut.draw_ui(&ui);
+                    // Run emulator update
+                    self_mut.emulator.update(ui.io().delta_time);
 
                     // Read and update screen buffer if changed:
                     if self_mut.emulator.screen.is_dirty() {
                         self_mut.emulator.screen.reset_dirty();
-                        let screen_w = chip8::SCREEN_SIZE.0;
-                        let screen_h = chip8::SCREEN_SIZE.1;
-                        for x in 0..screen_w {
-                            for y in 0..screen_h {
-                                let v = if self_mut.emulator.screen.get_pixel(x, y) {
-                                    0xFF
-                                } else {
-                                    0
-                                };
 
-                                let x0 = x * 4;
-                                let y0 = y * 4;
-                                let pos = y0 * screen_w;
-                                screen_raw_data[pos + x0..pos + x0 + 4]
-                                    .copy_from_slice(&[v, v, v, 0xFF]);
-                            }
-                        }
+                        screen.update(&self_mut.emulator, &mut renderer, &device, &mut queue);
+
                     }
 
-                    // Uploaded update screen
-                    renderer.update_texture(
-                        screen_texture_id,
-                        &device,
-                        &mut queue,
-                        &screen_raw_data,
-                        screen_w as u32,
-                        screen_h as u32,
-                    );
-
-                    // Screen window
-                    {
-                        let window = imgui::Window::new(im_str!("Screen")).always_auto_resize(true);
-                        window
-                            .position([500.0, 200.0], Condition::Once)
-                            .build(&ui, || {
-                                let size = [
-                                    (screen_w as f32) * screen_scale,
-                                    (screen_h as f32) * screen_scale,
-                                ];
-                                Image::new(screen_texture_id, size)
-                                    .tint_col(screen_color)
-                                    .build(&ui);
-                                ui.drag_float(im_str!("Scale"), &mut screen_scale).build();
-                                ui.same_line(0.0);
-                                imgui::ColorEdit::new(im_str!("Color"), &mut screen_color)
-                                    .build(&ui);
-                            });
-                    }
+                    // Draw actual app UI
+                    self_mut.draw_ui(&ui);
+                    // Draw screen window
+                    screen.draw_ui(&ui);
 
                     let mut encoder: wgpu::CommandEncoder = device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

@@ -2,7 +2,11 @@
 
 chip8 emulator in rust. UI is based on ImGui and shows some internals (CPU state, code).
 
+## How to run
 
+```
+> cargo run
+```
 
 
 ## Acknowledgements
