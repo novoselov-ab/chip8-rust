@@ -1,6 +1,8 @@
-# rust-chip8
+# CHIP-8 Emulator in Rust
 
-chip8 emulator in rust. UI is based on ImGui and shows some internals (CPU state, code).
+UI is based on ImGui and shows some internals (CPU state, code).
+
+![](demo.gif)
 
 ## How to run
 
